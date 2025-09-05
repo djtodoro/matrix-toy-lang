@@ -1,0 +1,43 @@
+"""
+Simple double transpose optimization demonstration.
+"""
+
+def matrix_computation(A, B):
+    """
+    Demonstrate double transpose optimization patterns.
+    
+    Args:
+        A: First input matrix
+        B: Second input matrix
+    
+    Returns:
+        Result matrix after operations
+    """
+    # Double transpose on A (should be optimized to just A)
+    C = A.T.T
+    
+    # Another double transpose pattern on B
+    D = B.T
+    E = D.T  # E should equal B
+    
+    # Add the results
+    F = C + E
+    
+    # Final double transpose
+    result = F.T.T
+    
+    return result
+
+def main():
+    """Main function to test matrix computation."""
+    # Define two 3x3 matrices
+    A = matrix([[1, 2, 3],
+                [4, 5, 6],
+                [7, 8, 9]])
+    
+    B = matrix([[9, 8, 7],
+                [6, 5, 4],
+                [3, 2, 1]])
+
+    # Run the computation
+    result = matrix_computation(A, B)

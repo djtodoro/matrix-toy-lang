@@ -1,11 +1,16 @@
-from xdsl.passes import Pass
+from xdsl.passes import ModulePass
 from xdsl.pattern_rewriter import (
     PatternRewriter,
+    PatternRewriteWalker,
     RewritePattern,
     op_type_rewrite_pattern
 )
 from xdsl.ir import Operation
+from xdsl.dialects import builtin
 from typing import List
+
+# Import TransposeOp from dialect
+from matrix_toy_lang.src.dialect import TransposeOp
 
 class DoubleTransposeElimination(RewritePattern):
     """Eliminate double transpose patterns: (A^T)^T = A"""
@@ -16,35 +21,36 @@ class DoubleTransposeElimination(RewritePattern):
         """Match and eliminate double transpose."""
         
         # Check if input to this transpose is also a transpose
-        input_op = op.input.owner
+        input_val = op.operands[0]
+        if not input_val.owner:
+            return
+            
+        input_op = input_val.owner
         
         if isinstance(input_op, TransposeOp):
             # Found pattern: transpose(transpose(X)) = X
-            original_matrix = input_op.input
+            original_matrix = input_op.operands[0]
             
-            # Replace all uses of double transpose with original
-            rewriter.replace_op(op, [original_matrix])
+            # Replace all uses of the double transpose result with the original matrix
+            op.results[0].replace_by(original_matrix)
             
-            # If the intermediate transpose has no other uses, remove it
-            if not input_op.result.uses:
-                rewriter.erase_op(input_op)
-            
-            print(f"Eliminated double transpose: {op}")
+            # Erase the outer transpose operation
+            rewriter.erase_op(op)
 
-class TransposeChainOptimization(Pass):
+class TransposeChainOptimization(ModulePass):
     """Optimize chains of transpose operations."""
     
     name = "optimize-transpose"
     
-    def apply(self, module: builtin.ModuleOp) -> None:
+    def apply(self, ctx, module: builtin.ModuleOp) -> None:
         """Apply transpose optimizations to module."""
         
         # Track statistics
         self.transposes_eliminated = 0
         
-        # First pass: eliminate obvious double transposes
-        pattern = DoubleTransposeElimination()
-        PatternRewriter(module).apply_pattern(pattern)
+        # Apply pattern rewriting
+        walker = PatternRewriteWalker(DoubleTransposeElimination())
+        walker.rewrite_module(module)
         
         # Second pass: find hidden transpose chains
         self.find_transpose_chains(module)
@@ -79,24 +85,18 @@ class TransposeChainOptimization(Pass):
         # TODO: Implement elimination logic
         pass
 
-class MatrixOptimizationPipeline(Pass):
+class MatrixOptimizationPipeline(ModulePass):
     """Complete optimization pipeline for matrix operations."""
     
     name = "matrix-opt-pipeline"
     
-    def apply(self, module: builtin.ModuleOp) -> None:
+    def apply(self, ctx, module: builtin.ModuleOp) -> None:
         """Apply all matrix optimizations."""
         
-        passes = [
-            TransposeChainOptimization(),
-            # Add more optimization passes here:
-            # CommonSubexpressionElimination(),
-            # DeadCodeElimination(),
-            # MatrixChainOptimization(),  # Optimal parenthesization
-        ]
-        
-        for opt_pass in passes:
-            opt_pass.apply(module)
+        # For now, just apply transpose optimization
+        # Walker-based approach is safer for the current xDSL version
+        walker = PatternRewriteWalker(DoubleTransposeElimination())
+        walker.rewrite_module(module)
         
         # Verify IR is still valid
         module.verify()

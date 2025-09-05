@@ -6,20 +6,23 @@ from xdsl.irdl import (
     irdl_attr_definition,
     operand_def,
     result_def,
-    attr_def
+    attr_def,
+    ParametrizedAttribute
 )
 from xdsl.dialects.builtin import (
     TensorType,
     Float32Type,
     IntAttr,
-    ArrayAttr
+    ArrayAttr,
+    TypeAttribute,
+    FloatAttr
 )
 from xdsl.ir import Dialect, Operation, SSAValue
 from typing import List, Optional
 
 # Define the Matrix dialect
 @irdl_attr_definition
-class MatrixType(TypeAttribute):
+class MatrixType(ParametrizedAttribute, TypeAttribute):
     """Type for matrix with known dimensions."""
     name = "matrix.type"
     
@@ -28,9 +31,11 @@ class MatrixType(TypeAttribute):
     dtype: TypeAttribute  # f32, f64, i32, etc.
     
     def __init__(self, rows: int, cols: int, dtype: TypeAttribute):
-        self.rows = IntAttr(rows)
-        self.cols = IntAttr(cols)
-        self.dtype = dtype
+        super().__init__(
+            IntAttr(rows),
+            IntAttr(cols),
+            dtype
+        )
 
 @irdl_op_definition
 class MatMulOp(IRDLOperation):
@@ -46,9 +51,9 @@ class MatMulOp(IRDLOperation):
         lhs_type = lhs.type
         rhs_type = rhs.type
         result_type = MatrixType(
-            lhs_type.rows.value,
-            rhs_type.cols.value,
-            lhs_type.dtype
+            lhs_type.parameters[0].data,
+            rhs_type.parameters[1].data,
+            lhs_type.parameters[2]
         )
         super().__init__(
             operands=[lhs, rhs],
@@ -57,11 +62,11 @@ class MatMulOp(IRDLOperation):
     
     def verify(self):
         """Verify that matrix dimensions are compatible."""
-        if self.lhs.type.cols.value != self.rhs.type.rows.value:
+        if self.lhs.type.parameters[1].data != self.rhs.type.parameters[0].data:
             raise ValueError(
                 f"Incompatible matrix dimensions for multiplication: "
-                f"({self.lhs.type.rows.value}x{self.lhs.type.cols.value}) @ "
-                f"({self.rhs.type.rows.value}x{self.rhs.type.cols.value})"
+                f"({self.lhs.type.parameters[0].data}x{self.lhs.type.parameters[1].data}) @ "
+                f"({self.rhs.type.parameters[0].data}x{self.rhs.type.parameters[1].data})"
             )
 
 @irdl_op_definition
@@ -76,9 +81,9 @@ class TransposeOp(IRDLOperation):
         input_type = input.type
         # Transpose swaps rows and columns
         result_type = MatrixType(
-            input_type.cols.value,
-            input_type.rows.value,
-            input_type.dtype
+            input_type.parameters[1].data,
+            input_type.parameters[0].data,
+            input_type.parameters[2]
         )
         super().__init__(
             operands=[input],
@@ -91,7 +96,7 @@ class ScalarMulOp(IRDLOperation):
     name = "matrix.scalar_mul"
     
     matrix = operand_def(MatrixType)
-    scalar = attr_def(Float32Type)
+    scalar = attr_def(FloatAttr)
     result = result_def(MatrixType)
     
     def __init__(self, matrix: SSAValue, scalar: float):
@@ -118,8 +123,8 @@ class AddOp(IRDLOperation):
     
     def verify(self):
         """Verify that matrices have the same shape."""
-        if (self.lhs.type.rows.value != self.rhs.type.rows.value or
-            self.lhs.type.cols.value != self.rhs.type.cols.value):
+        if (self.lhs.type.parameters[0].data != self.rhs.type.parameters[0].data or
+            self.lhs.type.parameters[1].data != self.rhs.type.parameters[1].data):
             raise ValueError("Matrix addition requires same dimensions")
 
 @irdl_op_definition
@@ -142,10 +147,15 @@ class MatrixDialect(Dialect):
     """Dialect for matrix operations."""
     name = "matrix"
     
-    operations = [
-        MatMulOp,
-        TransposeOp,
-        ScalarMulOp,
-        AddOp,
-        AllocOp
-    ]
+    def __init__(self):
+        super().__init__("matrix")
+        
+    @property
+    def operations(self):
+        return [
+            MatMulOp,
+            TransposeOp,
+            ScalarMulOp,
+            AddOp,
+            AllocOp
+        ]
