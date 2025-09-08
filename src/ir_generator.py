@@ -1,6 +1,6 @@
 from xdsl.dialects import builtin, func
 from xdsl.ir import Block, Region, SSAValue
-from xdsl.dialects.builtin import Float32Type, FloatAttr, ModuleOp
+from xdsl.dialects.builtin import Float32Type, FloatAttr, ModuleOp, FlatSymbolRefAttr, StringAttr
 from typing import Dict, List, Any
 from matrix_toy_lang.src.dialect import MatrixType, MatMulOp, TransposeOp, AddOp, ScalarMulOp, AllocOp
 
@@ -38,8 +38,8 @@ class MatrixIRGenerator:
         
         # Create block with appropriate arguments
         if func_name == 'matrix_computation':
-            # Two matrix arguments
-            matrix_type = MatrixType(4, 4, Float32Type())
+            # Two matrix arguments - use 3x3 to match main function
+            matrix_type = MatrixType(3, 3, Float32Type())
             block = Block(arg_types=[matrix_type, matrix_type])
             
             # Map arguments to variables
@@ -177,19 +177,34 @@ class MatrixIRGenerator:
                 # TODO: Initialize with values if needed
                 
         elif op_type == 'call':
-            # Function call - for now, handle matrix_computation specially
+            # Function call
             func_name = op_info['operation']['function']
             args = op_info['operation']['args']
             
-            if func_name == 'matrix_computation' and len(args) >= 2:
-                # Get the arguments
-                arg_vals = [var_map.get(arg) for arg in args]
-                if all(arg_vals):
-                    # Create a function call operation
-                    # For simplicity, we'll inline the result
-                    # In a real compiler, we'd generate a call instruction
-                    # For now, just use the first argument as placeholder
-                    result = arg_vals[0]
+            # Get the arguments
+            arg_vals = [var_map.get(arg) for arg in args if var_map.get(arg)]
+            
+            if arg_vals:
+                # Create a function call operation
+                callee = FlatSymbolRefAttr(StringAttr(func_name))
+                
+                # Determine result type based on function
+                if func_name == 'matrix_computation':
+                    # The result type should match the input matrix type
+                    result_type = arg_vals[0].type if arg_vals else None
+                else:
+                    result_type = None
+                
+                if result_type:
+                    call_op = func.CallOp(callee, arg_vals, [result_type])
+                else:
+                    call_op = func.CallOp(callee, arg_vals, [])
+                
+                block.add_op(call_op)
+                
+                # Get the result if the function returns something
+                if call_op.results:
+                    result = call_op.results[0]
         
         # Store result in variable map
         if result:

@@ -1,3 +1,5 @@
 src/__pycache__/
 __pycache__/
 matrix_toy_lang.egg-info/
+my_program*
+out*
